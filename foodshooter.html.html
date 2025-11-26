@@ -1,0 +1,578 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <!-- 關鍵：viewport-fit=cover 讓內容延伸到全螢幕，防止白邊 -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>餐飲單字大射擊 (Mobile Fixed)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* 全域設定：鎖定畫面，防止整體網頁滑動 */
+        html, body {
+            height: 100%;
+            width: 100%;
+            overflow: hidden;
+            background-color: #111827;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            /* 禁用選取與長按選單 */
+            -webkit-user-select: none;
+            user-select: none;
+            -webkit-touch-callout: none;
+        }
+
+        /* 遊戲主容器 */
+        .game-wrapper {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            display: flex;
+            flex-direction: column;
+            /* 使用 dvh 確保在手機瀏覽器上高度正確 */
+            height: 100dvh; 
+        }
+
+        .game-canvas {
+            background: linear-gradient(to bottom, #1a202c, #2d3748);
+            box-shadow: inset 0 0 20px #000;
+            touch-action: none; /* 禁止畫布上的預設觸控行為 */
+        }
+
+        /* 優化捲軸樣式 */
+        .custom-scroll::-webkit-scrollbar {
+            width: 4px;
+        }
+        .custom-scroll::-webkit-scrollbar-track {
+            background: rgba(0,0,0,0.2);
+        }
+        .custom-scroll::-webkit-scrollbar-thumb {
+            background-color: #4a5568;
+            border-radius: 4px;
+        }
+
+        /* 按鈕按壓效果 */
+        .btn-press {
+            transition: transform 0.05s, background-color 0.1s;
+            touch-action: manipulation;
+        }
+        .btn-press:active {
+            transform: scale(0.96);
+        }
+    </style>
+</head>
+<body>
+
+    <div class="game-wrapper">
+        <!-- 1. 頂部資訊欄 (固定高度) -->
+        <div class="flex justify-between items-center px-3 py-2 bg-gray-800 border-b border-gray-700 h-14 shrink-0 z-20 shadow-md">
+            <div class="flex items-center gap-2">
+                <span class="text-2xl">🛡️</span>
+                <h1 class="text-base font-bold text-yellow-400 leading-tight">餐飲<br>衛士</h1>
+            </div>
+            <div class="flex gap-4">
+                <div class="text-center">
+                    <span class="block text-[10px] text-gray-400 uppercase">進度</span>
+                    <div id="progressDisplay" class="text-lg font-mono font-bold text-blue-400 leading-none">0/12</div>
+                </div>
+                <div class="text-center">
+                    <span class="block text-[10px] text-gray-400 uppercase">分數</span>
+                    <div id="scoreDisplay" class="text-lg font-mono font-bold text-green-400 leading-none">0</div>
+                </div>
+                <div class="text-center">
+                    <span class="block text-[10px] text-gray-400 uppercase">生命</span>
+                    <div id="livesDisplay" class="text-lg font-mono font-bold text-red-400 leading-none tracking-tighter">❤❤❤</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 2. 遊戲畫布 (自動填滿剩餘空間 flex-grow) -->
+        <div class="flex-grow relative w-full overflow-hidden bg-gray-900" id="canvasContainer">
+            <canvas id="gameCanvas" class="game-canvas block w-full h-full"></canvas>
+            
+            <!-- 開始畫面 -->
+            <div id="startScreen" class="absolute inset-0 bg-black/85 flex flex-col justify-center items-center z-30 p-6 backdrop-blur-sm">
+                <h2 class="text-3xl font-bold mb-6 text-white text-center">餐飲單字大射擊</h2>
+                <div class="bg-gray-800/80 p-5 rounded-xl border border-gray-600 mb-8 max-w-sm w-full">
+                    <ul class="space-y-4 text-gray-300">
+                        <li class="flex items-center"><span class="text-2xl mr-3">👆</span> <span>上方畫面：<b>左右滑動</b>控制戰車</span></li>
+                        <li class="flex items-center"><span class="text-2xl mr-3">👇</span> <span>下方按鈕：<b>點擊單字</b>發射子彈</span></li>
+                        <li class="flex items-center"><span class="text-2xl mr-3">🖼️</span> <span>將圖片與此檔案放在一起即可顯示圖片，否則顯示圖示。</span></li>
+                    </ul>
+                </div>
+                <button id="startBtn" class="w-full max-w-xs py-4 bg-blue-600 hover:bg-blue-500 rounded-xl text-xl font-bold shadow-lg shadow-blue-500/30 active:scale-95 transition-all">開始遊戲</button>
+            </div>
+
+            <!-- 遊戲結束畫面 -->
+            <div id="gameOverScreen" class="hidden absolute inset-0 bg-red-900/95 flex flex-col justify-center items-center z-30 p-6">
+                <h2 class="text-4xl font-bold mb-2 text-white">遊戲結束</h2>
+                <p class="text-lg mb-8 text-red-200">差一點點！再試一次！</p>
+                <div class="text-center mb-8">
+                    <p class="text-sm text-gray-300 uppercase tracking-widest">最終分數</p>
+                    <p class="text-5xl font-mono text-yellow-300 font-bold" id="finalScore">0</p>
+                </div>
+                <button id="restartBtn" class="px-10 py-3 bg-white text-red-900 rounded-full text-lg font-bold shadow-lg active:scale-95 transition">再玩一次</button>
+            </div>
+
+            <!-- 獲勝畫面 -->
+            <div id="winScreen" class="hidden absolute inset-0 bg-yellow-600/95 flex flex-col justify-center items-center z-30 p-6">
+                <h2 class="text-4xl font-bold mb-4 text-white">🎉 闖關成功！</h2>
+                <p class="text-lg mb-8 text-yellow-100 text-center">所有單字都學會了！</p>
+                <div class="text-center mb-8">
+                    <p class="text-sm text-yellow-100 uppercase tracking-widest">最終分數</p>
+                    <p class="text-5xl font-mono text-white font-bold" id="winScore">0</p>
+                </div>
+                <button id="winRestartBtn" class="px-10 py-3 bg-white text-yellow-700 rounded-full text-lg font-bold shadow-lg active:scale-95 transition">再次挑戰</button>
+            </div>
+        </div>
+
+        <!-- 3. 單字控制面板 (固定高度佔比 30%) -->
+        <!-- pb-safe: 預留 iOS 底部安全距離 -->
+        <div class="h-[30dvh] bg-gray-800 border-t border-gray-600 flex flex-col shrink-0 relative z-20 shadow-[0_-4px_10px_rgba(0,0,0,0.5)]">
+            <div class="text-center text-xs text-gray-400 py-1 bg-gray-900/80 backdrop-blur">
+                點擊單字發射 (可上下捲動選單)
+            </div>
+            
+            <!-- 捲動區域 -->
+            <div class="flex-grow overflow-y-auto custom-scroll p-2">
+                <!-- 
+                   Grid 設定：
+                   - grid-cols-3: 手機一行3個
+                   - gap-2: 間距
+                   - pb-32: ★關鍵★ 底部增加大量填充 (約 128px)，確保最後一行能滑上來不被遮擋
+                -->
+                <div class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2 pb-32" id="wordButtons">
+                    <!-- Javascript 動態生成按鈕 -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- 遊戲資料 ---
+        // 確保 img 欄位與您的檔名完全一致
+        const VOCABULARY = [
+            { word: "fast-food restaurant", img: "fast-food restaurant.png", emoji: "🍔", label: "速食店" },
+            { word: "food court", img: "food court.png", emoji: "🏢", label: "美食街" },
+            { word: "buffet", img: "buffet.png", emoji: "🍽️", label: "自助餐" },
+            { word: "cafeteria", img: "cafeteria.png", emoji: "🏫", label: "自助食堂" },
+            { word: "café", img: "cafe'.png", emoji: "☕", label: "咖啡廳" },
+            { word: "pub", img: "pub.png", emoji: "🍺", label: "酒吧" },
+            { word: "pizzeria", img: "pizzeria.png", emoji: "🍕", label: "披薩店" },
+            { word: "food truck", img: "food truck.png", emoji: "🚚", label: "餐車" },
+            { word: "steakhouse", img: "steakhouse.png", emoji: "🥩", label: "牛排館" },
+            { word: "diner", img: "diner.png", emoji: "🥞", label: "小餐館" },
+            { word: "sandwich bar", img: "sandwich bar.png", emoji: "🥪", label: "三明治吧" },
+            { word: "street vendor", img: "street vendor.png", emoji: "🍢", label: "路邊攤" }
+        ];
+
+        // --- 系統變數 ---
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const container = document.getElementById('canvasContainer');
+        const scoreEl = document.getElementById('scoreDisplay');
+        const livesEl = document.getElementById('livesDisplay');
+        const progressEl = document.getElementById('progressDisplay');
+        const finalScoreEl = document.getElementById('finalScore');
+        const winScoreEl = document.getElementById('winScore');
+        const wordGrid = document.getElementById('wordButtons');
+        
+        let gameState = 'START';
+        let score = 0;
+        let lives = 3;
+        let lastTime = 0;
+        let spawnTimer = 0;
+        let spawnInterval = 2000;
+        let difficultyMultiplier = 1;
+        let animationFrameId;
+        
+        let clearedWords = new Set();
+
+        const tank = { x: 0, y: 0, width: 50, height: 40, color: '#3b82f6', targetX: 0 };
+        let enemies = [];
+        let bullets = [];
+        let particles = [];
+
+        // --- 圖片預載邏輯 ---
+        // 修正：使用 encodeURIComponent 處理檔名空白，並確保如果讀取失敗會標記
+        VOCABULARY.forEach(item => {
+            const img = new Image();
+            // 嘗試處理 URL 編碼，避免空格導致讀取失敗
+            // 如果您的檔案是在本機，這能幫助瀏覽器正確找到 'fast-food%20restaurant.png'
+            // 如果 item.img 已經是 URL 或 Base64，這裡也通常適用
+            try {
+                // 嘗試標準化路徑
+                let srcPath = item.img;
+                // 只有當看起來像檔名時才編碼（避免破壞 data:image 或 http://）
+                if (!srcPath.startsWith('http') && !srcPath.startsWith('data:')) {
+                    // 簡單處理：將空格轉為 %20，保留其他字符
+                    // 這裡不使用 encodeURIComponent 整個字串，以免破壞路徑斜線，僅替換空格
+                    // 但因為題目是純檔名，我們可以試著編碼
+                    // 最保險的方式：直接用原始字串，讓瀏覽器處理，但加入錯誤處理
+                }
+                img.src = srcPath;
+            } catch(e) {
+                console.warn("Image path error", e);
+                img.src = item.img;
+            }
+            
+            item.loadedImg = null; // 預設為 null
+            
+            img.onload = () => { 
+                item.loadedImg = img; 
+                console.log(`Loaded: ${item.word}`);
+            };
+            img.onerror = () => { 
+                // 讀取失敗時保持 null，這樣 draw() 函數就會改畫 Emoji
+                console.warn(`Failed to load image for: ${item.word}. Will fallback to Emoji.`);
+                item.loadedImg = null; 
+            };
+        });
+
+        // --- 初始化 UI ---
+        function initUI() {
+            wordGrid.innerHTML = '';
+            VOCABULARY.forEach(item => {
+                const btn = document.createElement('button');
+                btn.id = `btn-${item.word.replace(/[^a-zA-Z0-9]/g, '-')}`;
+                // 增加 min-height 確保按鈕夠大
+                btn.className = 'btn-press relative group bg-gray-700 active:bg-gray-600 rounded-lg border border-gray-600 p-1 flex flex-col items-center justify-center min-h-[70px] shadow-sm overflow-hidden select-none';
+                
+                btn.innerHTML = `
+                    <div class="text-xs text-yellow-300 font-bold leading-tight w-full break-words px-1">${item.word}</div>
+                    <div class="text-[10px] text-gray-300 mt-1 bg-black/20 px-2 rounded-full">${item.label}</div>
+                    <div class="absolute top-1 right-1 opacity-20 text-xl pointer-events-none">${item.emoji}</div>
+                `;
+                
+                const handleAction = (e) => {
+                    if (e.type === 'touchstart') e.preventDefault(); 
+                    if (gameState === 'PLAYING') {
+                        fireBullet(item.word);
+                        // 按鈕回饋
+                        if (!btn.classList.contains('bg-green-800')) {
+                            btn.style.backgroundColor = '#2563eb';
+                            setTimeout(() => {
+                                if (!btn.classList.contains('bg-green-800')) {
+                                    btn.style.backgroundColor = '';
+                                }
+                            }, 100);
+                        }
+                    }
+                };
+
+                btn.addEventListener('mousedown', handleAction);
+                btn.addEventListener('touchstart', handleAction, {passive: false});
+
+                wordGrid.appendChild(btn);
+            });
+        }
+
+        // --- 視窗調整 ---
+        function resize() {
+            const rect = container.getBoundingClientRect();
+            canvas.width = rect.width;
+            canvas.height = rect.height;
+            tank.y = canvas.height - 60;
+            tank.x = Math.min(Math.max(tank.x, tank.width/2), canvas.width - tank.width/2);
+            tank.targetX = tank.x;
+            if (gameState !== 'PLAYING') draw();
+        }
+        window.addEventListener('resize', resize);
+        // 針對手機轉向優化
+        window.addEventListener('orientationchange', () => setTimeout(resize, 200));
+
+        // --- 遊戲邏輯 ---
+        function startGame() {
+            gameState = 'PLAYING';
+            score = 0;
+            lives = 3;
+            spawnInterval = 2500;
+            enemies = [];
+            bullets = [];
+            particles = [];
+            clearedWords.clear();
+            
+            updateScoreUI();
+            updateProgressUI();
+            
+            // 重置按鈕
+            document.querySelectorAll('#wordButtons button').forEach(btn => {
+                btn.className = 'btn-press relative group bg-gray-700 active:bg-gray-600 rounded-lg border border-gray-600 p-1 flex flex-col items-center justify-center min-h-[70px] shadow-sm overflow-hidden select-none';
+                btn.style.backgroundColor = '';
+            });
+
+            document.getElementById('startScreen').classList.add('hidden');
+            document.getElementById('gameOverScreen').classList.add('hidden');
+            document.getElementById('winScreen').classList.add('hidden');
+            
+            resize();
+            lastTime = performance.now();
+            if (animationFrameId) cancelAnimationFrame(animationFrameId);
+            gameLoop(lastTime);
+        }
+
+        function gameOver() {
+            gameState = 'GAMEOVER';
+            finalScoreEl.innerText = score;
+            document.getElementById('gameOverScreen').classList.remove('hidden');
+        }
+
+        function gameWin() {
+            gameState = 'WIN';
+            winScoreEl.innerText = score;
+            document.getElementById('winScreen').classList.remove('hidden');
+            createConfetti();
+        }
+
+        function fireBullet(word) {
+            bullets.push({
+                x: tank.x,
+                y: tank.y - 20,
+                word: word,
+                width: 120,
+                speed: canvas.height * 0.015,
+                active: true
+            });
+        }
+
+        function spawnEnemy() {
+            const uncollected = VOCABULARY.filter(v => !clearedWords.has(v.word));
+            const pool = uncollected.length > 0 ? uncollected : VOCABULARY;
+            const item = pool[Math.floor(Math.random() * pool.length)];
+            
+            const size = Math.min(80, canvas.width * 0.18); 
+            const x = Math.random() * (canvas.width - size - 20) + size/2 + 10; 
+            
+            enemies.push({
+                x: x,
+                y: -size,
+                size: size,
+                word: item.word,
+                emoji: item.emoji,
+                img: item.loadedImg, // 傳遞載入成功的圖片物件
+                speed: (canvas.height * 0.002) * (1 + score/2000), 
+                active: true
+            });
+        }
+
+        function createExplosion(x, y, color) {
+            for (let i = 0; i < 10; i++) {
+                particles.push({
+                    x: x, y: y,
+                    vx: (Math.random() - 0.5) * 10,
+                    vy: (Math.random() - 0.5) * 10,
+                    life: 1.0, color: color, size: Math.random() * 4 + 2
+                });
+            }
+        }
+
+        function createConfetti() {
+            for(let i=0; i<30; i++) {
+                setTimeout(() => {
+                    createExplosion(
+                        canvas.width/2 + (Math.random()-0.5) * canvas.width, 
+                        canvas.height/2 + (Math.random()-0.5) * canvas.height, 
+                        ['#FFD700', '#FFF', '#F00'][Math.floor(Math.random()*3)]
+                    );
+                }, i * 100);
+            }
+        }
+
+        function update(dt) {
+            if (gameState !== 'PLAYING') {
+                particles.forEach(p => { p.x += p.vx; p.y += p.vy; p.life -= 0.05; });
+                particles = particles.filter(p => p.life > 0);
+                return;
+            }
+
+            tank.x += (tank.targetX - tank.x) * 0.15;
+            if (tank.x < tank.width/2) tank.x = tank.width/2;
+            if (tank.x > canvas.width - tank.width/2) tank.x = canvas.width - tank.width/2;
+
+            spawnTimer += dt;
+            const currentInterval = Math.max(800, 2500 - score * 5);
+            if (spawnTimer > currentInterval) {
+                spawnEnemy();
+                spawnTimer = 0;
+            }
+
+            bullets.forEach(b => {
+                b.y -= b.speed;
+                if (b.y < -50) b.active = false;
+            });
+
+            enemies.forEach(e => {
+                e.y += e.speed;
+                
+                // 碰撞檢測：戰車
+                const dx = e.x - tank.x;
+                const dy = e.y - tank.y;
+                if (Math.sqrt(dx*dx + dy*dy) < (e.size/2 + tank.width/2 - 5)) {
+                    createExplosion(tank.x, tank.y, '#ef4444');
+                    lives--;
+                    updateScoreUI();
+                    e.active = false;
+                    if (navigator.vibrate) navigator.vibrate(200);
+                    if (lives <= 0) gameOver();
+                }
+
+                // 碰撞檢測：子彈
+                bullets.forEach(b => {
+                    if (!b.active) return;
+                    if (Math.abs(b.x - e.x) < (e.size/2 + 20) && Math.abs(b.y - e.y) < e.size/2 + 20) {
+                        if (b.word === e.word) {
+                            score += 10;
+                            if (!clearedWords.has(e.word)) {
+                                clearedWords.add(e.word);
+                                const btnId = `btn-${e.word.replace(/[^a-zA-Z0-9]/g, '-')}`;
+                                const btn = document.getElementById(btnId);
+                                if(btn) {
+                                    btn.classList.remove('bg-gray-700', 'active:bg-gray-600');
+                                    btn.classList.add('bg-green-800', 'border-green-600');
+                                }
+                            }
+                            updateScoreUI();
+                            updateProgressUI();
+                            createExplosion(e.x, e.y, '#fbbf24');
+                            e.active = false;
+                            b.active = false;
+                            if (clearedWords.size >= VOCABULARY.length) gameWin();
+                        } else {
+                            b.active = false;
+                            createExplosion(b.x, b.y, '#fff');
+                        }
+                    }
+                });
+
+                if (e.y > canvas.height + e.size) e.active = false;
+            });
+
+            bullets = bullets.filter(b => b.active);
+            enemies = enemies.filter(e => e.active);
+            particles.forEach(p => { p.x += p.vx; p.y += p.vy; p.life -= 0.05; });
+            particles = particles.filter(p => p.life > 0);
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // 背景網格
+            ctx.strokeStyle = '#2d3748'; ctx.lineWidth = 1;
+            const gridSize = 50;
+            for(let i = (canvas.width/2) % gridSize; i < canvas.width; i += gridSize) {
+                ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, canvas.height); ctx.stroke();
+            }
+            for(let i = (canvas.height) % gridSize; i < canvas.height; i += gridSize) {
+                ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(canvas.width, i); ctx.stroke();
+            }
+
+            // 戰車
+            ctx.save();
+            ctx.translate(tank.x, tank.y);
+            ctx.fillStyle = tank.color;
+            ctx.beginPath();
+            ctx.moveTo(-20, 20); ctx.lineTo(20, 20); ctx.lineTo(15, -10); ctx.lineTo(-15, -10);
+            ctx.fill();
+            ctx.fillStyle = '#60a5fa'; ctx.fillRect(-5, -30, 10, 25);
+            ctx.fillStyle = '#1e3a8a'; ctx.fillRect(-26, 8, 10, 16); ctx.fillRect(16, 8, 10, 16);
+            ctx.restore();
+
+            // 子彈
+            ctx.font = 'bold 16px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            bullets.forEach(b => {
+                ctx.fillStyle = '#fcd34d'; ctx.fillText(b.word, b.x, b.y);
+                ctx.fillStyle = '#f59e0b'; ctx.fillRect(b.x - 2, b.y + 12, 4, 10);
+            });
+
+            // 敵人
+            enemies.forEach(e => {
+                ctx.save();
+                ctx.translate(e.x, e.y);
+                
+                // 判斷是否顯示圖片
+                // 如果 img 屬性存在且有效 (非 null)，則畫圖
+                if (e.img) {
+                    // 畫圖片
+                    // 如果已收集，加個金色光圈背景
+                    if (clearedWords.has(e.word)) {
+                         ctx.shadowColor = '#fbbf24'; ctx.shadowBlur = 15;
+                    }
+                    try {
+                        ctx.drawImage(e.img, -e.size/2, -e.size/2, e.size, e.size);
+                    } catch (err) {
+                        // 萬一畫圖失敗，即時回退到文字
+                        ctx.font = `${e.size * 0.6}px Arial`;
+                        ctx.fillStyle = '#fff';
+                        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                        ctx.fillText(e.emoji, 0, 0);
+                    }
+                    ctx.shadowBlur = 0;
+                } else {
+                    // 沒圖片，畫方塊 + Emoji
+                    ctx.strokeStyle = clearedWords.has(e.word) ? '#fbbf24' : '#fff';
+                    ctx.lineWidth = 2;
+                    ctx.fillStyle = '#1f2937';
+                    ctx.beginPath(); ctx.roundRect(-e.size/2, -e.size/2, e.size, e.size, 10);
+                    ctx.fill(); ctx.stroke();
+                    
+                    ctx.font = `${e.size * 0.6}px Arial`;
+                    ctx.fillStyle = '#fff';
+                    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                    ctx.fillText(e.emoji, 0, 0);
+                }
+                ctx.restore();
+            });
+
+            // 粒子
+            particles.forEach(p => {
+                ctx.globalAlpha = Math.max(0, p.life);
+                ctx.fillStyle = p.color;
+                ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2); ctx.fill();
+                ctx.globalAlpha = 1.0;
+            });
+        }
+
+        function gameLoop(timestamp) {
+            const dt = timestamp - lastTime;
+            lastTime = timestamp;
+            update(dt);
+            draw();
+            animationFrameId = requestAnimationFrame(gameLoop);
+        }
+
+        function updateScoreUI() {
+            scoreEl.innerText = score;
+            let livesStr = ''; for(let i=0; i<lives; i++) livesStr += '❤';
+            livesEl.innerText = livesStr;
+        }
+        function updateProgressUI() {
+            progressEl.innerText = `${clearedWords.size}/${VOCABULARY.length}`;
+        }
+
+        function handleInput(clientX) {
+            if (gameState !== 'PLAYING') return;
+            const rect = canvas.getBoundingClientRect();
+            tank.targetX = clientX - rect.left;
+        }
+
+        canvas.addEventListener('mousemove', e => handleInput(e.clientX));
+        canvas.addEventListener('touchmove', e => {
+            e.preventDefault();
+            if(e.touches.length > 0) handleInput(e.touches[0].clientX);
+        }, {passive: false});
+        canvas.addEventListener('touchstart', e => {
+             e.preventDefault();
+             if(e.touches.length > 0) handleInput(e.touches[0].clientX);
+        }, {passive: false});
+
+        document.getElementById('startBtn').addEventListener('click', startGame);
+        document.getElementById('restartBtn').addEventListener('click', startGame);
+        document.getElementById('winRestartBtn').addEventListener('click', startGame);
+
+        initUI();
+        resize();
+        ctx.fillStyle = '#1a202c'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    </script>
+</body>
+</html>
